@@ -204,10 +204,19 @@ def call_ds(model, messages, max_tokens=4000, temperature=0.3, timeout=300, use_
             data = resp.json()
 
             if "choices" in data and data["choices"]:
-                result = data["choices"][0]["message"]["content"]
-                # 空结果检测
-                if not result or len(result.strip()) < 10:
-                    log("API", f"返回空/极短结果 ({len(result) if result else 0}字符) (尝试 {attempt+1}/4, {elapsed:.1f}s)", "WARN")
+                message = data["choices"][0]["message"]
+                content = message.get("content") or ""
+                reasoning = message.get("reasoning_content") or ""
+                # DeepSeek推理模型优先级：
+                # 1. content足够长(>=10) → 使用content
+                # 2. content太短且reasoning_content有效 → 使用reasoning_content
+                # 3. 两者都空 → 报错重试
+                if content.strip() and len(content.strip()) >= 10:
+                    result = content
+                elif reasoning.strip():
+                    result = reasoning
+                else:
+                    log("API", f"返回空结果 (content+reasoning均空) (尝试 {attempt+1}/4, {elapsed:.1f}s)", "WARN")
                     _circuit_breaker.record_failure()
                     log_circuit_state()
                     time.sleep(jittered_backoff(attempt))
